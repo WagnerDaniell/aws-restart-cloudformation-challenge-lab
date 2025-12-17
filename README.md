@@ -17,19 +17,36 @@ Implementei um template CloudFormation que cria toda a infraestrutura AWS necess
 ## 📋 Template Executado
 
 ```yaml
-AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS re/Start Challenge Lab - Create VPC and EC2
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS re/Start Challenge Lab - Create a VPC, attach an Internet Gateway,
+  create a private subnet, a security group allowing SSH from anywhere,
+  and an EC2 t3.micro inside the private subnet.
+
+Parameters:
+  LatestAmi:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: 'Amazon Linux 2 AMI via SSM'
 
 Resources:
+
   MyVPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Restart-Lab-VPC
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Restart-Lab-IGW
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -37,37 +54,59 @@ Resources:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref InternetGateway
 
-  WebServerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
     Properties:
-      GroupDescription: Enable SSH access
       VpcId: !Ref MyVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
 
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.1.0/24
-      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
 
-  WebServerInstance:
+  SecurityGroupSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH from anywhere
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.micro
-      ImageId: !Ref LatestAmiId
+      ImageId: !Ref LatestAmi
       SubnetId: !Ref PrivateSubnet
       SecurityGroupIds:
-        - !Ref WebServerSecurityGroup
+        - !Ref SecurityGroupSSH
+      Tags:
+        - Key: Name
+          Value: Restart-Lab-Instance
 
-Parameters:
-  LatestAmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+Outputs:
+  VPCID:
+    Value: !Ref MyVPC
+  InstanceID:
+    Value: !Ref EC2Instance
+  SubnetID:
+    Value: !Ref PrivateSubnet
 ```
 
 ## 🔧 Comandos Executados
